@@ -34,8 +34,6 @@ on:
 
 permissions:
   contents: read
-  workflows: write
-
 jobs:
   wrangler:
     name: Wrangler runner (${{ matrix.os }})

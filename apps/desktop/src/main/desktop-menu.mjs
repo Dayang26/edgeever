@@ -1,0 +1,151 @@
+const menuCopy = {
+  en: {
+    about: "About EdgeEver",
+    addToDictionary: "Add to Dictionary",
+    close: "Close Window",
+    copy: "Copy",
+    copyLinkAddress: "Copy Link Address",
+    cut: "Cut",
+    edit: "Edit",
+    file: "File",
+    focusSearch: "Focus Search",
+    front: "Bring All to Front",
+    hide: "Hide EdgeEver",
+    minimize: "Minimize",
+    newMemo: "New Note",
+    newNotebook: "New Notebook",
+    openNoteWindow: "Open Note in New Window",
+    paste: "Paste",
+    pasteAsPlainText: "Paste as Plain Text",
+    quit: "Quit EdgeEver",
+    resetZoom: "Reset Zoom",
+    restartToUpdate: "Restart to update",
+    screenshotFailed: "Couldn't capture a screenshot. If this is the first time, allow Screen Recording for EdgeEver in System Settings.",
+    screenshotToNote: "Capture screen to note",
+    selectAll: "Select All",
+    show: "Show EdgeEver",
+    toggleFocusMode: "Toggle Focus Mode",
+    toggleFullScreen: "Toggle Full Screen",
+    undo: "Undo",
+    redo: "Redo",
+    view: "View",
+    window: "Window",
+    zoom: "Zoom",
+    zoomIn: "Zoom In",
+    zoomOut: "Zoom Out",
+  },
+  zh: {
+    about: "关于 EdgeEver",
+    addToDictionary: "添加到词典",
+    close: "关闭窗口",
+    copy: "复制",
+    copyLinkAddress: "复制链接地址",
+    cut: "剪切",
+    edit: "编辑",
+    file: "文件",
+    focusSearch: "定位到搜索",
+    front: "全部置于顶层",
+    hide: "隐藏 EdgeEver",
+    minimize: "最小化",
+    newMemo: "新建笔记",
+    newNotebook: "新建笔记本",
+    openNoteWindow: "在新窗口打开笔记",
+    paste: "粘贴",
+    pasteAsPlainText: "粘贴为纯文本",
+    quit: "退出 EdgeEver",
+    resetZoom: "重置缩放",
+    restartToUpdate: "重启以更新",
+    screenshotFailed: "截图失败。若是第一次使用，请在系统设置中允许 EdgeEver 使用屏幕录制。",
+    screenshotToNote: "截取屏幕到笔记",
+    selectAll: "全选",
+    show: "显示 EdgeEver",
+    toggleFocusMode: "切换专注模式",
+    toggleFullScreen: "切换全屏",
+    undo: "撤销",
+    redo: "重做",
+    view: "视图",
+    window: "窗口",
+    zoom: "缩放窗口",
+    zoomIn: "放大",
+    zoomOut: "缩小",
+  },
+  pl: {
+    about: "EdgeEver – informacje",
+    addToDictionary: "Dodaj do słownika",
+    close: "Zamknij okno",
+    copy: "Kopiuj",
+    copyLinkAddress: "Kopiuj adres linku",
+    cut: "Wytnij",
+    edit: "Edycja",
+    file: "Plik",
+    focusSearch: "Przejdź do wyszukiwania",
+    front: "Wszystko na wierzch",
+    hide: "Ukryj EdgeEver",
+    minimize: "Minimalizuj",
+    newMemo: "Nowa notatka",
+    newNotebook: "Nowy notatnik",
+    openNoteWindow: "Otwórz notatkę w nowym oknie",
+    paste: "Wklej",
+    pasteAsPlainText: "Wklej jako zwykły tekst",
+    quit: "Zakończ EdgeEver",
+    resetZoom: "Resetuj powiększenie",
+    restartToUpdate: "Uruchom ponownie, aby zaktualizować",
+    screenshotFailed: "Nie udało się wykonać zrzutu ekranu. Jeśli robisz to pierwszy raz, zezwól EdgeEver na nagrywanie ekranu w Ustawieniach systemowych.",
+    screenshotToNote: "Zrzut ekranu do notatki",
+    selectAll: "Zaznacz wszystko",
+    show: "Pokaż EdgeEver",
+    toggleFocusMode: "Przełącz tryb skupienia",
+    toggleFullScreen: "Przełącz pełny ekran",
+    undo: "Cofnij",
+    redo: "Ponów",
+    view: "Widok",
+    window: "Okno",
+    zoom: "Powiększ okno",
+    zoomIn: "Powiększ",
+    zoomOut: "Pomniejsz",
+  },
+};
+
+export const desktopMenuCopy = (locale) => {
+  const normalized = typeof locale === "string" ? locale.toLowerCase() : "";
+  if (normalized.startsWith("zh")) return menuCopy.zh;
+  if (normalized === "pl" || normalized.startsWith("pl-")) return menuCopy.pl;
+  return menuCopy.en;
+};
+
+const regionCopy = {
+  en: {
+    hint: "Drag to select an area. Release to save it as a note",
+    cancel: "Esc to cancel",
+    full: "Double-click to capture the whole screen",
+  },
+  zh: {
+    hint: "拖拽选择区域，松开后保存为笔记",
+    cancel: "Esc 取消",
+    full: "双击截取整个屏幕",
+  },
+  pl: {
+    hint: "Przeciągnij, aby zaznaczyć obszar. Puść, aby zapisać jako notatkę",
+    cancel: "Esc anuluje",
+    full: "Kliknij dwukrotnie, aby przechwycić cały ekran",
+  },
+  ja: {
+    hint: "ドラッグして範囲を選択し、離すとノートに保存します",
+    cancel: "Esc でキャンセル",
+    full: "ダブルクリックで画面全体",
+  },
+  ru: {
+    hint: "Перетащите, чтобы выбрать область. Отпустите, чтобы сохранить в заметку",
+    cancel: "Esc — отмена",
+    full: "Двойной щелчок — весь экран",
+  },
+};
+
+export const screenshotRegionCopy = (locale) => {
+  const normalized = typeof locale === "string" ? locale.toLowerCase() : "";
+  if (normalized.startsWith("zh")) return regionCopy.zh;
+  if (normalized === "pl" || normalized.startsWith("pl-")) return regionCopy.pl;
+  if (normalized === "ja" || normalized.startsWith("ja-")) return regionCopy.ja;
+  if (normalized === "ru" || normalized.startsWith("ru-")) return regionCopy.ru;
+  return regionCopy.en;
+};

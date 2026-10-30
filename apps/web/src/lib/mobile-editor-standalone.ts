@@ -1,5 +1,5 @@
 import { emptyDoc, resolveMemoContentDoc, type MemoDetail, type Resource, type TiptapDoc } from "@edgeever/shared";
-import { ApiRequestError } from "@/lib/api";
+import { ApiRequestError, api } from "@/lib/api";
 
 export const MOBILE_EDITOR_LEAVE_SAVE_TIMEOUT_MS = 1600;
 export const MOBILE_EDITOR_INITIAL_FOCUS_DELAY_MS = 160;
@@ -74,7 +74,17 @@ export const parseMobileEditorTags = (value: string) =>
     .map((tag) => tag.trim())
     .filter(Boolean);
 
-export const safeMobileEditorReturnPath = (value: string | null) => (value?.startsWith("/") ? value : "/");
+export const safeMobileEditorReturnPath = (value: string | null) => {
+  const fallback = import.meta.env.BASE_URL.startsWith(".")
+    ? `${import.meta.env.BASE_URL}index.html`
+    : import.meta.env.BASE_URL;
+
+  if (value?.startsWith("/")) return value;
+  if (import.meta.env.BASE_URL.startsWith(".") && value?.startsWith(`${import.meta.env.BASE_URL}index.html`)) {
+    return value;
+  }
+  return fallback;
+};
 
 export const requestMobileEditorJson = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const headers = new Headers(init?.headers);
@@ -104,13 +114,7 @@ export const requestMobileEditorJson = async <T,>(path: string, init?: RequestIn
 };
 
 export const uploadMobileEditorResource = async (memoId: string, file: File) => {
-  const form = new FormData();
-  form.append("file", file);
-
-  return requestMobileEditorJson<MobileEditorResourceResponse>(`/api/v1/memos/${encodeURIComponent(memoId)}/resources`, {
-    method: "POST",
-    body: form,
-  });
+  return api.uploadMemoResource(memoId, file);
 };
 
 export const normalizeMobileEditorDoc = (memo: MemoDetail): TiptapDoc => {

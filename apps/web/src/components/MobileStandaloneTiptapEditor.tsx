@@ -1,12 +1,22 @@
+import "katex/dist/katex.min.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
+import { PdfAttachment } from "@/components/editor/PdfAttachment";
+import { FileAttachment } from "@/components/editor/FileAttachment";
 import Image from "@tiptap/extension-image";
+import { mergeAttributes } from "@tiptap/core";
 import Placeholder from "@tiptap/extension-placeholder";
-import { TableKit } from "@tiptap/extension-table";
-import { createExcerpt, docToMarkdown, docToText, emptyDoc, type MemoDetail, type MemoEditSession, type Notebook, type TiptapDoc } from "@edgeever/shared";
-import { getMobileEditorInputAttributes, getMobileEditorPlaceholder } from "@edgeever/shared/mobile-editor";
+import { ImageGallery, createExcerpt, createEdgeEverDocumentExtensions, docToMarkdown, docToText, emptyDoc, getImageReferrerPolicy, isPdfAttachment, wrapDetailsContentHtml, type MemoDetail, type MemoEditSession, type Notebook, type TagSummary, type TiptapDoc } from "@edgeever/shared";
+import { createEdgeEverMathematics } from "@edgeever/shared/mathematics";
+import { createNativeImageGalleryView, NATIVE_IMAGE_GALLERY_CSS } from "@edgeever/shared/native-image-gallery";
+import { NEW_IMAGE_WIDTH_PERCENT } from "@edgeever/shared/image-display";
+import { insertUploadedResources } from "@/lib/resource-insertion";
+import { getResourceInsertionTarget } from "@/lib/resource-insertion-target";
+import { clearMobileEditorUndoHistory, getMobileEditorInputAttributes, getMobileEditorPlaceholder } from "@edgeever/shared/mobile-editor";
+import { EdgeEverLink } from "@edgeever/shared/editor-link";
+import { activateHeadingAnchorClick } from "@/lib/editor-heading-anchor";
+import { createInlineFieldExtension } from "@/components/editor/InlineField";
 import {
   MobileEditorFallback,
   MobileEditorHeader,
@@ -14,10 +24,10 @@ import {
   MobileEditorNotebookSheet,
   MobileEditorToolbar,
 } from "@/components/MobileStandaloneEditorParts";
-import { getEditableMemoTitle, getNotebookMoveOptions, readAutoSaveIntervalPreference } from "@/lib/app-helpers";
+import { EDITOR_LOCAL_SAVE_DELAY_MS, getEditableMemoTitle, getNotebookMoveOptions } from "@/lib/app-helpers";
 import { defaultLocale, normalizeLocale } from "@/i18n/locales";
 import { compressImageForUpload } from "@/lib/image-compression";
-import { localDb, type LocalDraft } from "@/lib/local-db";
+import { localDb, type LocalDraft, type MemoUpdateSyncPayload } from "@/lib/local-db";
 import {
   getStandaloneMobileEditorReturnPath,
   markStandaloneMobileEditorReturning,
@@ -38,8 +48,28 @@ import {
   type MobileEditorSaveState,
 } from "@/lib/mobile-editor-standalone";
 import { getMemoUpdateQueueId, isMemoUpdateAlreadyApplied, queueMemoUpdate, shouldQueueMemoSaveError } from "@/lib/sync-queue";
-import { EdgeEverCodeBlock, codeBlockLowlight } from "@/lib/code-block";
+import { createMarkdownImagePasteRule } from "@/lib/markdown-image-paste";
+import { preserveEmptyListIndentOnBackspace, wrapIndentedParagraphInList } from "@/lib/editor-shortcuts";
 import { ThemeBlock } from "./ThemeBlock";
+import { EditorTagPicker } from "./EditorTagPicker";
+import { listLocalTags } from "@/lib/local-mirror";
+
+const ProtectedExternalImage = Image.extend({
+  addPasteRules() {
+    return [createMarkdownImagePasteRule(this.type)];
+  },
+  renderHTML({ HTMLAttributes }) {
+    const referrerPolicy = getImageReferrerPolicy(HTMLAttributes.src);
+    return [
+      "img",
+      mergeAttributes(
+        this.options.HTMLAttributes,
+        HTMLAttributes,
+        referrerPolicy ? { referrerpolicy: referrerPolicy } : {},
+      ),
+    ];
+  },
+});
 
 type ListNotebooksResponse = {
   notebooks: Notebook[];
@@ -58,6 +88,8 @@ export const MobileStandaloneTiptapEditor = ({
   const { t, i18n } = useTranslation();
   const memoId = memoIdProp ?? params.get("memoId");
   const locale = normalizeLocale(i18n.resolvedLanguage ?? i18n.language) ?? defaultLocale;
+  const localeRef = useRef(locale);
+  localeRef.current = locale;
   const draftKey = getMobileEditorDraftKey(memoId);
   const [memo, setMemo] = useState<MemoDetail | null>(null);
   const memoRef = useRef<MemoDetail | null>(null);
@@ -168,18 +200,26 @@ export const MobileStandaloneTiptapEditor = ({
     };
   }, [memoId, readLocalDraft]);
 
+  const inlineFieldExtension = useMemo(() => createInlineFieldExtension(locale), [locale]);
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ codeBlock: false }),
-      EdgeEverCodeBlock.configure({ lowlight: codeBlockLowlight, defaultLanguage: "plaintext" }),
+      ...createEdgeEverDocumentExtensions({
+        mathematics: createEdgeEverMathematics(),
+        starterKit: { link: false },
+        image: ProtectedExternalImage.configure({
+          allowBase64: false,
+          inline: false,
+        }),
+        gallery: ImageGallery.extend({
+          addNodeView() { return createNativeImageGalleryView(() => localeRef.current); },
+        }),
+        pdf: PdfAttachment,
+        file: FileAttachment,
+        table: { table: { renderWrapper: true } },
+      }),
+      EdgeEverLink,
+      inlineFieldExtension,
       ThemeBlock,
-      Image.configure({
-        allowBase64: false,
-        inline: false,
-      }),
-      TableKit.configure({
-        table: { renderWrapper: true },
-      }),
       Placeholder.configure({
         placeholder: getMobileEditorPlaceholder(locale),
       }),
@@ -187,6 +227,14 @@ export const MobileStandaloneTiptapEditor = ({
     content: emptyDoc(),
     editorProps: {
       attributes: getMobileEditorInputAttributes("edgeever-mobile-tiptap-content"),
+      transformPastedHTML: (html) => wrapDetailsContentHtml(html),
+      handleKeyDown: (view, event) => {
+        if (event.key !== "Backspace" || !preserveEmptyListIndentOnBackspace(view.state, view.dispatch)) {
+          return false;
+        }
+        event.preventDefault();
+        return true;
+      },
     },
     onUpdate: ({ editor: activeEditor }) => {
       contentJsonRef.current = activeEditor.getJSON() as TiptapDoc;
@@ -200,13 +248,10 @@ export const MobileStandaloneTiptapEditor = ({
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
-      const autoSaveIntervalMs = readAutoSaveIntervalPreference();
-      if (autoSaveIntervalMs !== null) {
-        saveTimerRef.current = window.setTimeout(() => {
-          saveTimerRef.current = null;
-          void saveNowRef.current();
-        }, autoSaveIntervalMs);
-      }
+      saveTimerRef.current = window.setTimeout(() => {
+        saveTimerRef.current = null;
+        void saveNowRef.current();
+      }, EDITOR_LOCAL_SAVE_DELAY_MS);
     },
   });
 
@@ -452,13 +497,10 @@ export const MobileStandaloneTiptapEditor = ({
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current);
     }
-    const autoSaveIntervalMs = readAutoSaveIntervalPreference();
-    if (autoSaveIntervalMs !== null) {
-      saveTimerRef.current = window.setTimeout(() => {
-        saveTimerRef.current = null;
-        void saveNow();
-      }, autoSaveIntervalMs);
-    }
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      void saveNow();
+    }, EDITOR_LOCAL_SAVE_DELAY_MS);
   }, [persistLocalDraft, saveNow, setSaveStateStable]);
 
   const persistReturnPreview = useCallback(() => {
@@ -524,6 +566,14 @@ export const MobileStandaloneTiptapEditor = ({
     scheduleMetadataSave();
   };
 
+  const loadTags = useCallback(async () => {
+    if (memoId) {
+      const localMemo = await localDb.memos.filter((candidate) => candidate.id === memoId).first();
+      if (localMemo) return listLocalTags(localMemo.scope);
+    }
+    return requestMobileEditorJson<{ tags: TagSummary[] }>("/api/v1/tags");
+  }, [memoId]);
+
   const handleNotebookChange = async (nextNotebookId: string) => {
     const currentMemo = memoRef.current;
     if (!currentMemo || !nextNotebookId || nextNotebookId === currentMemo.notebookId || notebookUpdatePending) {
@@ -586,28 +636,51 @@ export const MobileStandaloneTiptapEditor = ({
       setSaveStateStable("uploading");
       const { resource } = await uploadMobileEditorResource(currentMemo.id, uploadFile);
       if (resource.kind === "image") {
-        editor
-          .chain()
-          .focus()
-          .setImage({
+        const target = getResourceInsertionTarget(editor.state.selection);
+        editor.chain().focus().command(insertUploadedResources(target, [{
+          type: "image",
+          attrs: {
             src: resource.url,
             alt: file.name,
             title: file.name,
-          })
-          .run();
-      } else {
+            width: NEW_IMAGE_WIDTH_PERCENT,
+          },
+        }], true)).run();
+      } else if (isPdfAttachment(file.type, resource.filename || file.name)) {
         editor
           .chain()
           .focus()
           .insertContent({
             type: "paragraph",
             content: [{
-              type: "text",
-              text: `附件：${resource.filename || file.name}`,
-              marks: [{
-                type: "link",
-                attrs: { href: resource.url, target: "_blank", class: "edgeever-attachment-link" },
-              }],
+              type: "edgeeverPdfAttachment",
+              attrs: {
+                url: resource.url,
+                label: `附件：${resource.filename || file.name}`,
+                filename: resource.filename || file.name,
+                mimeType: resource.mimeType || file.type || "application/pdf",
+                byteSize: resource.byteSize,
+                displayMode: "compact",
+              },
+            }],
+          })
+          .run();
+      } else {
+        const filename = resource.filename || file.name;
+        editor
+          .chain()
+          .focus()
+          .insertContent({
+            type: "paragraph",
+            content: [{
+              type: "edgeeverFileAttachment",
+              attrs: {
+                url: resource.url,
+                label: `附件：${filename}`,
+                filename,
+                mimeType: file.type,
+                byteSize: resource.byteSize,
+              },
             }],
           })
           .run();
@@ -706,6 +779,13 @@ export const MobileStandaloneTiptapEditor = ({
           queuedUpdate = undefined;
         }
         const useDraft = Boolean(draft && (queuedUpdate || Date.parse(draft.updatedAt || "") >= Date.parse(data.memo.updatedAt || "")));
+        const queuedPayload =
+          queuedUpdate && queuedUpdate.kind === "memo.update"
+            ? (queuedUpdate.payload as MemoUpdateSyncPayload)
+            : null;
+        const useQueuedPayload = Boolean(
+          queuedPayload && !useDraft && queuedUpdate && !isMemoUpdateAlreadyApplied(data.memo, queuedUpdate),
+        );
 
         setMemo(data.memo);
 
@@ -716,9 +796,28 @@ export const MobileStandaloneTiptapEditor = ({
           tagsTextRef.current = draft.tagsText || "";
           contentJsonRef.current = draft.contentJson || emptyDoc();
           editor.commands.setContent(contentJsonRef.current, { emitUpdate: false });
+          clearMobileEditorUndoHistory(editor);
           dirtyRef.current = true;
           setSaveStateStable("local-draft");
           scheduleMetadataSave();
+          focusEditorAfterLoad();
+        } else if (useQueuedPayload && queuedPayload) {
+          const queuedTitle = getEditableMemoTitle(queuedPayload.title);
+          const queuedTagsText = queuedPayload.tags.join(", ");
+          setTitle(queuedTitle);
+          titleRef.current = queuedTitle;
+          setTagsText(queuedTagsText);
+          tagsTextRef.current = queuedTagsText;
+          contentJsonRef.current = queuedPayload.contentJson || emptyDoc();
+          editor.commands.setContent(contentJsonRef.current, { emitUpdate: false });
+          clearMobileEditorUndoHistory(editor);
+          lastSavedSnapshotRef.current = JSON.stringify({
+            title: queuedTitle,
+            tagsText: queuedTagsText,
+            contentJson: contentJsonRef.current,
+          });
+          dirtyRef.current = false;
+          setSaveStateStable("local-draft");
           focusEditorAfterLoad();
         } else {
           setTitle(nextTitle);
@@ -727,6 +826,7 @@ export const MobileStandaloneTiptapEditor = ({
           tagsTextRef.current = nextTagsText;
           contentJsonRef.current = nextContentJson;
           editor.commands.setContent(nextContentJson, { emitUpdate: false });
+          clearMobileEditorUndoHistory(editor);
           lastSavedSnapshotRef.current = JSON.stringify({
             title: nextTitle,
             tagsText: nextTagsText,
@@ -842,6 +942,16 @@ export const MobileStandaloneTiptapEditor = ({
     !memo || !editor || saveState === "loading" || saveState === "compressing" || saveState === "uploading" || saveState === "leaving";
   const currentNotebookLabel =
     notebookOptions.find((notebook) => notebook.id === memo?.notebookId)?.name ?? t("editor.notebookFallback");
+  const activeListItemType = editor?.isActive("taskItem") ? "taskItem" : "listItem";
+  const historyAvailable = (command: "undo" | "redo") => {
+    if (!editor || editor.isDestroyed) return false;
+    try {
+      return editor.can().chain().focus()[command]().run();
+    } catch {
+      return false;
+    }
+  };
+  const canWrapIndentedParagraph = Boolean(editor && wrapIndentedParagraphInList(editor.state, undefined));
 
   const fallbackMarkdown = memo ? docToMarkdown(contentJsonRef.current) : "";
   const runEditorCommand = (command: () => boolean) => {
@@ -855,6 +965,7 @@ export const MobileStandaloneTiptapEditor = ({
 
   return (
     <div className="mobile-editor-shell">
+      <style>{NATIVE_IMAGE_GALLERY_CSS}</style>
       <MobileEditorHeader saveLabel={saveLabel} statusClassName={statusClassName} saveState={saveState} onLeave={() => void leavePage()} />
 
       <main className="mobile-editor-main">
@@ -874,30 +985,41 @@ export const MobileStandaloneTiptapEditor = ({
             disabled={!memo || notebookUpdatePending || saveState === "loading" || notebookOptions.length === 0}
             onOpen={() => setNotebookSheetOpen(true)}
           />
-          <input
-            className="mobile-editor-tags"
+          <EditorTagPicker
+            contentMarkdown={fallbackMarkdown}
+            disabled={!memo || saveState === "loading"}
+            loadTags={loadTags}
+            title={title}
             value={tagsText}
-            autoComplete="on"
-            autoCorrect="on"
-            inputMode="text"
-            placeholder={t("editor.tagPlaceholder")}
-            onChange={(event) => handleTagsChange(event.target.value)}
+            onChange={handleTagsChange}
           />
         </div>
 
         <MobileEditorToolbar
           disabled={editorActionDisabled}
+          undoAvailable={historyAvailable("undo")}
+          redoAvailable={historyAvailable("redo")}
           boldActive={Boolean(editor?.isActive("bold"))}
           bulletListActive={Boolean(editor?.isActive("bulletList"))}
-          increaseListIndentAvailable={Boolean(editor?.can().chain().focus().sinkListItem("listItem").run())}
-          decreaseListIndentAvailable={Boolean(editor?.can().chain().focus().liftListItem("listItem").run())}
+          taskListActive={Boolean(editor?.isActive("taskList"))}
+          increaseListIndentAvailable={canWrapIndentedParagraph || Boolean(editor?.can().chain().focus().sinkListItem(activeListItemType).run())}
+          decreaseListIndentAvailable={Boolean(editor?.can().chain().focus().liftListItem(activeListItemType).run())}
           blockquoteActive={Boolean(editor?.isActive("blockquote"))}
           locale={locale}
+          onUndo={() => runEditorCommand(() => editor?.chain().focus().undo().run() ?? false)}
+          onRedo={() => runEditorCommand(() => editor?.chain().focus().redo().run() ?? false)}
           onPickImage={() => imageInputRef.current?.click()}
           onToggleBold={() => runEditorCommand(() => editor?.chain().focus().toggleBold().run() ?? false)}
-          onToggleBulletList={() => runEditorCommand(() => editor?.chain().focus().toggleBulletList().run() ?? false)}
-          onIncreaseListIndent={() => runEditorCommand(() => editor?.chain().focus().sinkListItem("listItem").run() ?? false)}
-          onDecreaseListIndent={() => runEditorCommand(() => editor?.chain().focus().liftListItem("listItem").run() ?? false)}
+          onToggleBulletList={() => runEditorCommand(() => (
+            editor ? wrapIndentedParagraphInList(editor.state, editor.view.dispatch, "bulletList") || editor.commands.toggleBulletList() : false
+          ))}
+          onToggleTaskList={() => runEditorCommand(() => (
+            editor ? wrapIndentedParagraphInList(editor.state, editor.view.dispatch, "taskList") || editor.commands.toggleTaskList() : false
+          ))}
+          onIncreaseListIndent={() => runEditorCommand(() => (
+            editor ? wrapIndentedParagraphInList(editor.state, editor.view.dispatch) || editor.commands.sinkListItem(activeListItemType) : false
+          ))}
+          onDecreaseListIndent={() => runEditorCommand(() => editor?.chain().focus().liftListItem(activeListItemType).run() ?? false)}
           onToggleBlockquote={() => runEditorCommand(() => editor?.chain().focus().toggleBlockquote().run() ?? false)}
           onSetHorizontalRule={() => runEditorCommand(() => editor?.chain().focus().setHorizontalRule().run() ?? false)}
         />
@@ -923,7 +1045,12 @@ export const MobileStandaloneTiptapEditor = ({
           />
         )}
 
-        <div className="edgeever-mobile-tiptap-editor">
+        <div
+          className="edgeever-mobile-tiptap-editor"
+          onClickCapture={(event) => {
+            activateHeadingAnchorClick(event, editor && !editor.isDestroyed ? editor.view : null);
+          }}
+        >
           <EditorContent editor={editor} />
         </div>
 

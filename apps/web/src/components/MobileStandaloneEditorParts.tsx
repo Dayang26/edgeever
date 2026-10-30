@@ -1,4 +1,4 @@
-import { Bold, Check, ChevronDown, ImagePlus, List, ListIndentDecrease, ListIndentIncrease, Minus, Quote } from "lucide-react";
+import { Bold, Check, ChevronDown, ImagePlus, List, ListIndentDecrease, ListIndentIncrease, ListTodo, Minus, Quote, Redo2, Undo2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   MOBILE_EDITOR_TOOLBAR_ACTIONS,
@@ -54,48 +54,66 @@ const MobileEditorHeaderInner = ({
 
 export const MobileEditorToolbar = ({
   disabled,
+  undoAvailable,
+  redoAvailable,
   boldActive,
   bulletListActive,
+  taskListActive,
   increaseListIndentAvailable,
   decreaseListIndentAvailable,
   blockquoteActive,
   locale,
+  onUndo,
+  onRedo,
   onPickImage,
   onToggleBold,
   onToggleBulletList,
+  onToggleTaskList,
   onIncreaseListIndent,
   onDecreaseListIndent,
   onToggleBlockquote,
   onSetHorizontalRule,
 }: {
   disabled: boolean;
+  undoAvailable: boolean;
+  redoAvailable: boolean;
   boldActive: boolean;
   bulletListActive: boolean;
+  taskListActive: boolean;
   increaseListIndentAvailable: boolean;
   decreaseListIndentAvailable: boolean;
   blockquoteActive: boolean;
   locale: MobileEditorLocale;
+  onUndo: () => void;
+  onRedo: () => void;
   onPickImage: () => void;
   onToggleBold: () => void;
   onToggleBulletList: () => void;
+  onToggleTaskList: () => void;
   onIncreaseListIndent: () => void;
   onDecreaseListIndent: () => void;
   onToggleBlockquote: () => void;
   onSetHorizontalRule: () => void;
 }) => {
   const icons: Record<MobileEditorToolbarActionId, ReactNode> = {
+    undo: <Undo2 aria-hidden="true" size={18} strokeWidth={2} />,
+    redo: <Redo2 aria-hidden="true" size={18} strokeWidth={2} />,
     image: <ImagePlus aria-hidden="true" size={18} strokeWidth={2} />,
     bold: <Bold aria-hidden="true" size={17} strokeWidth={2.4} />,
     bulletList: <List aria-hidden="true" size={18} strokeWidth={2.2} />,
+    taskList: <ListTodo aria-hidden="true" size={18} strokeWidth={2.1} />,
     increaseListIndent: <ListIndentIncrease aria-hidden="true" size={18} strokeWidth={2.1} />,
     decreaseListIndent: <ListIndentDecrease aria-hidden="true" size={18} strokeWidth={2.1} />,
     blockquote: <Quote aria-hidden="true" size={17} strokeWidth={2.2} />,
     horizontalRule: <Minus aria-hidden="true" size={18} strokeWidth={2.4} />,
   };
   const handlers: Record<MobileEditorToolbarActionId, () => void> = {
+    undo: onUndo,
+    redo: onRedo,
     image: onPickImage,
     bold: onToggleBold,
     bulletList: onToggleBulletList,
+    taskList: onToggleTaskList,
     increaseListIndent: onIncreaseListIndent,
     decreaseListIndent: onDecreaseListIndent,
     blockquote: onToggleBlockquote,
@@ -104,6 +122,7 @@ export const MobileEditorToolbar = ({
   const activeStates: Partial<Record<MobileEditorToolbarActionId, boolean>> = {
     bold: boldActive,
     bulletList: bulletListActive,
+    taskList: taskListActive,
     blockquote: blockquoteActive,
   };
 
@@ -121,6 +140,8 @@ export const MobileEditorToolbar = ({
             title={label}
             aria-pressed={activeStates[id]}
             disabled={disabled
+              || (id === "undo" && !undoAvailable)
+              || (id === "redo" && !redoAvailable)
               || (id === "increaseListIndent" && !increaseListIndentAvailable)
               || (id === "decreaseListIndent" && !decreaseListIndentAvailable)}
             onPointerDown={(event) => event.preventDefault()}

@@ -29,6 +29,7 @@ const memoMatchesFilter = (memo: MemoSummary, filterMode: unknown) => {
 const memoMatchesStaticListConstraints = (memo: MemoSummary, queryKey: readonly unknown[]) => {
   const [, view, notebookId, , filterMode] = queryKey;
   const notebookIds = Array.isArray(queryKey[6]) ? queryKey[6] : [];
+  const tag = typeof queryKey[7] === "string" ? queryKey[7].trim().toLocaleLowerCase() : "";
   const memoView = view === "trash" ? "trash" : "notebook";
 
   if ((memoView === "trash") !== memo.isDeleted) {
@@ -44,6 +45,10 @@ const memoMatchesStaticListConstraints = (memo: MemoSummary, queryKey: readonly 
     return false;
   }
 
+  if (tag && !memo.tags.some((memoTag) => memoTag.toLocaleLowerCase() === tag)) {
+    return false;
+  }
+
   return memoMatchesFilter(memo, filterMode);
 };
 
@@ -54,11 +59,14 @@ const sortMemoSummariesForList = (memos: MemoSummary[], queryKey: readonly unkno
   const sortMode = queryKey[5];
   const sorted = [...memos];
 
-  if (sortMode === "title-asc") {
+  if (sortMode === "title-asc" || sortMode === "title-desc") {
+    const direction = sortMode === "title-desc" ? -1 : 1;
     return sorted.sort((left, right) => {
       const leftTitle = left.title?.trim() || left.excerpt || DEFAULT_MEMO_TITLE;
       const rightTitle = right.title?.trim() || right.excerpt || DEFAULT_MEMO_TITLE;
-      return leftTitle.localeCompare(rightTitle, "zh-CN") || left.id.localeCompare(right.id);
+      const titleCompare = leftTitle.localeCompare(rightTitle, "zh-CN");
+      if (titleCompare !== 0) return titleCompare * direction;
+      return left.id.localeCompare(right.id);
     });
   }
 
@@ -102,6 +110,47 @@ const reflowMemoListPages = (current: MemoListQueryData, memos: MemoSummary[], t
       };
     }),
   };
+};
+
+export const remapMemoIdsInLists = (
+  queryClient: QueryClient,
+  memoIdMappings: ReadonlyMap<string, string>,
+) => {
+  if (memoIdMappings.size === 0) {
+    return;
+  }
+
+  for (const [queryKey, current] of queryClient.getQueriesData<MemoListQueryData>({ queryKey: ["memos"] })) {
+    if (!current) {
+      continue;
+    }
+
+    const flatMemos = current.pages.flatMap((page) => page.memos);
+    let changed = false;
+    const remappedMemos = flatMemos.map((memo) => {
+      const nextId = memoIdMappings.get(memo.id);
+      if (!nextId || nextId === memo.id) {
+        return memo;
+      }
+
+      changed = true;
+      return { ...memo, id: nextId };
+    });
+
+    if (!changed) {
+      continue;
+    }
+
+    const nextMemos = deduplicateMemoSummaries(remappedMemos);
+    const removed = remappedMemos.length - nextMemos.length;
+    const currentTotalCount = current.pages[0]?.totalCount ?? flatMemos.length;
+    const totalCount = Math.max(nextMemos.length, currentTotalCount - removed);
+
+    queryClient.setQueryData(
+      queryKey,
+      reflowMemoListPages(current, sortMemoSummariesForList(nextMemos, queryKey), totalCount),
+    );
+  }
 };
 
 export const updateMemoSummaryInLists = (queryClient: QueryClient, summary: MemoSummary) => {

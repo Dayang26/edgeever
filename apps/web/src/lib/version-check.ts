@@ -1,59 +1,45 @@
-const LATEST_RELEASE_URL = "https://api.github.com/repos/tianma-if/edgeever/releases/latest";
-const CACHE_KEY = "edgeever:latest-release";
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const DESKTOP_ASSET_PATTERN = /^EdgeEver-(\d+\.\d+\.\d+)-mac-(arm64|x64)\.dmg$/;
 
-export type LatestRelease = {
-  tagName: string;
-  url: string;
-};
-
-const parseVersion = (value: string) => {
-  const match = value.match(/v?(\d+)\.(\d+)\.(\d+)/i);
-  return match ? match.slice(1).map(Number) : null;
-};
-
-export const isVersionOutdated = (currentVersion: string, latestVersion: string) => {
-  const current = parseVersion(currentVersion);
-  const latest = parseVersion(latestVersion);
-  if (!current || !latest) return false;
-
-  for (let index = 0; index < 3; index += 1) {
-    if (current[index] !== latest[index]) return current[index] < latest[index];
+export const findDesktopReleaseVersion = (assetNames: string[]) => {
+  const versions = new Map<string, string>();
+  for (const name of assetNames) {
+    const match = DESKTOP_ASSET_PATTERN.exec(name);
+    if (!match) continue;
+    if (versions.has(match[2])) return null;
+    versions.set(match[2], match[1]);
   }
-
-  return false;
+  return (
+    versions.size === 2 &&
+    versions.get("arm64") === versions.get("x64")
+  )
+    ? versions.get("arm64")!
+    : null;
 };
 
-const readCachedRelease = (): LatestRelease | null => {
-  try {
-    const cached = JSON.parse(window.sessionStorage.getItem(CACHE_KEY) ?? "null") as {
-      expiresAt?: number;
-      release?: LatestRelease;
-    } | null;
-    return cached?.expiresAt && cached.expiresAt > Date.now() && cached.release ? cached.release : null;
-  } catch {
-    return null;
-  }
+export { isClientAheadOfInstance, isVersionOutdated } from "@edgeever/shared";
+
+export const getReleaseTagForVersion = (version: string) => {
+  const match = version.match(/^v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?:\+[0-9A-Za-z.-]+)?$/i);
+  return match ? `v${match[1]}` : null;
 };
 
-export const fetchLatestRelease = async (signal?: AbortSignal): Promise<LatestRelease> => {
-  const cached = readCachedRelease();
-  if (cached) return cached;
+const normalizeLocale = (locale: string) => locale.trim().replaceAll("_", "-").toLowerCase();
 
-  const response = await fetch(LATEST_RELEASE_URL, {
-    headers: { Accept: "application/vnd.github+json" },
-    signal,
-  });
-  if (!response.ok) throw new Error(`Release lookup failed with ${response.status}`);
+export const resolveLocalizedReleaseChanges = (
+  changes: Record<string, readonly string[]>,
+  language: string,
+  fallbackLanguage = "en-US"
+) => {
+  const locales = Object.keys(changes);
+  const normalizedLanguage = normalizeLocale(language);
+  const exactLocale = locales.find((locale) => normalizeLocale(locale) === normalizedLanguage);
+  if (exactLocale) return changes[exactLocale];
 
-  const payload = (await response.json()) as { html_url?: string; tag_name?: string };
-  if (!payload.tag_name || !payload.html_url) throw new Error("Release response is incomplete");
+  const baseLanguage = normalizedLanguage.split("-")[0];
+  const relatedLocale = locales.find((locale) => normalizeLocale(locale).split("-")[0] === baseLanguage);
+  if (relatedLocale) return changes[relatedLocale];
 
-  const release = { tagName: payload.tag_name, url: payload.html_url };
-  try {
-    window.sessionStorage.setItem(CACHE_KEY, JSON.stringify({ expiresAt: Date.now() + CACHE_TTL_MS, release }));
-  } catch {
-    // Storage can be unavailable in restricted browsing modes.
-  }
-  return release;
+  const normalizedFallback = normalizeLocale(fallbackLanguage);
+  const fallbackLocale = locales.find((locale) => normalizeLocale(locale) === normalizedFallback);
+  return fallbackLocale ? changes[fallbackLocale] : [];
 };

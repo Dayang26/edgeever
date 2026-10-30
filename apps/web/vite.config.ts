@@ -1,4 +1,4 @@
-import { automaticPosterThumbnails } from "./poster-thumbnails.ts";
+// import { automaticPosterThumbnails } from "./poster-thumbnails.ts";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { resolveDeploymentBuildMetadata } from "@edgeever/shared/deployment-metadata";
@@ -146,7 +146,7 @@ export default defineConfig({
     __EDGEEVER_DESKTOP_BUILD__: JSON.stringify(isDesktopBuild),
   },
   plugins: [
-    automaticPosterThumbnails(),
+    // automaticPosterThumbnails(),
     tailwindcss(),
     localDevelopmentAuth(),
     publicShareMarkdownDev(),
